@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,13 @@ const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN || 0); // 0 = unlimited
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const API_BASE = process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
 const API_KEY = process.env.GEMINI_API_KEY;
+
+// Chat history sync (optional). Needs SESSION_SECRET + an Upstash Redis database.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "1009861656675-j0mlifu9lipga2ciom483deumq82rsbh.apps.googleusercontent.com";
+const SESSION_SECRET = process.env.SESSION_SECRET || "";
+const KV_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/$/, "");
+const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+const SYNC_ON = Boolean(SESSION_SECRET && KV_URL && KV_TOKEN);
 
 if (!API_KEY) {
   console.error("Missing GEMINI_API_KEY. Copy .env.example to .env and add your key.");
@@ -86,13 +94,13 @@ const app = express();
 // CORS: lets the static page (GitHub Pages, biggo.gt.tc or an Android app's index.html) call this backend.
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // Optional in-memory rate limiter (off by default)
@@ -113,6 +121,77 @@ function rateLimit(req, res, next) {
 function sse(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
+
+// ---------- Google login + chat history sync ----------
+function signToken(sub) {
+  const payload = Buffer.from(JSON.stringify({ sub, exp: Date.now() + 30 * 86400e3 })).toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+function verifyToken(tok) {
+  const [payload, sig] = String(tok || "").split(".");
+  if (!payload || !sig) return null;
+  const good = crypto.createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(good);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const p = JSON.parse(Buffer.from(payload, "base64url").toString());
+    return p.exp > Date.now() ? p.sub : null;
+  } catch {
+    return null;
+  }
+}
+async function kv(...cmd) {
+  const r = await fetch(KV_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(cmd),
+  });
+  if (!r.ok) throw new Error("kv " + r.status);
+  return (await r.json()).result;
+}
+function authed(req, res, next) {
+  if (!SYNC_ON) return res.status(503).json({ error: "sync off" });
+  const sub = verifyToken((req.headers.authorization || "").replace(/^Bearer /, ""));
+  if (!sub) return res.status(401).json({ error: "unauthorized" });
+  req.sub = sub;
+  next();
+}
+
+app.post("/api/auth/google", async (req, res) => {
+  if (!SYNC_ON) return res.status(503).json({ error: "sync off" });
+  try {
+    const cred = String(req.body?.credential || "");
+    const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred));
+    const p = await r.json();
+    if (!r.ok || p.aud !== GOOGLE_CLIENT_ID || !p.sub) return res.status(401).json({ error: "invalid token" });
+    res.json({ token: signToken(p.sub) });
+  } catch {
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+app.get("/api/chats", authed, async (req, res) => {
+  try {
+    const v = await kv("GET", "chats:" + req.sub);
+    res.json({ chats: v ? JSON.parse(v) : [] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+app.put("/api/chats", authed, async (req, res) => {
+  const chats = Array.isArray(req.body?.chats) ? req.body.chats.slice(0, 50) : null;
+  if (!chats) return res.status(400).json({ error: "bad body" });
+  try {
+    await kv("SET", "chats:" + req.sub, JSON.stringify(chats));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed" });
+  }
+});
 
 app.post("/api/search", rateLimit, async (req, res) => {
   const query = String(req.body?.query || "").trim();
