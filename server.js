@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.PORT || 3000);
-const MODEL = process.env.MODEL || "gemini-2.5-flash";
+// Free-tier friendly defaults (see https://ai.dev/rate-limit for your own limits):
+// - gemini-2.5-flash-lite: Google Search grounding is available on the free tier
+// - gemini-3.5-flash-lite: larger daily allowance, but no free Google Search (answers without live search)
+const MODEL = process.env.MODEL || "gemini-2.5-flash-lite";
+const FALLBACK_MODELS = (process.env.FALLBACK_MODELS ?? "gemini-3.5-flash-lite").split(",").map((s) => s.trim()).filter(Boolean);
+const MODELS = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)];
 const MAX_TOKENS = Number(process.env.MAX_TOKENS || 4096);
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN || 0); // 0 = unlimited
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
@@ -25,6 +30,37 @@ For every question, search the web for current, reliable information, then write
 - Be thorough but clear. Mention dates and figures when relevant.
 - If sources disagree or information is uncertain, say so.
 - Do not invent facts. If you cannot find something, say so.`;
+
+const NO_SEARCH_PROMPT = `You are a helpful assistant inside a search website. Live web search is not available right now.
+Answer from your own knowledge in a detailed, well-organized way.
+- Reply in the same language the user wrote their question in.
+- Use Markdown where it helps.
+- Briefly mention that the information may be out of date and should be checked for recent events.
+- Do not invent facts. If you are not sure, say so.`;
+
+function callGemini(model, query, useSearch, signal) {
+  const url = `${API_BASE}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
+  const body = {
+    systemInstruction: { parts: [{ text: useSearch ? SYSTEM_PROMPT : NO_SEARCH_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: query }] }],
+    generationConfig: { maxOutputTokens: MAX_TOKENS },
+  };
+  if (useSearch) body.tools = [{ google_search: {} }];
+  return fetch(url, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", "x-goog-api-key": API_KEY },
+    body: JSON.stringify(body),
+  });
+}
+
+function errorMessage(status) {
+  if (status === 429) return "Google's usage limit was reached for this model (429). Try again later, or set another MODEL / FALLBACK_MODELS.";
+  if (status === 404) return "The model name is not available (404). Set a current model in the MODEL variable.";
+  if (status === 400 || status === 403 || status === 401)
+    return `Google rejected the request (${status}). Check GEMINI_API_KEY and MODEL.`;
+  return "Something went wrong while answering. Please try again.";
+}
 
 const app = express();
 
@@ -80,29 +116,34 @@ app.post("/api/search", rateLimit, async (req, res) => {
   try {
     sse(res, "status", { state: "searching" });
 
-    const url = `${API_BASE}/v1beta/models/${encodeURIComponent(MODEL)}:streamGenerateContent?alt=sse`;
-    const upstream = await fetch(url, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "Content-Type": "application/json", "x-goog-api-key": API_KEY },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text: query }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { maxOutputTokens: MAX_TOKENS },
-      }),
-    });
+    // Try each model in order. For each model, first with Google Search, and if that is
+    // rejected (quota / unsupported) once more without search.
+    let upstream = null;
+    let usedSearch = true;
+    let lastStatus = 0;
 
-    if (!upstream.ok || !upstream.body) {
-      const detail = await upstream.text().catch(() => "");
-      console.error("Gemini error", upstream.status, detail.slice(0, 500));
-      const message =
-        upstream.status === 429
-          ? "The free usage limit was reached. Please try again in a little while."
-          : "Something went wrong while answering. Please try again.";
-      sse(res, "error", { message });
+    outer: for (const model of MODELS) {
+      for (const useSearch of [true, false]) {
+        const r = await callGemini(model, query, useSearch, controller.signal);
+        if (r.ok && r.body) {
+          upstream = r;
+          usedSearch = useSearch;
+          break outer;
+        }
+        lastStatus = r.status;
+        const detail = await r.text().catch(() => "");
+        console.error("Gemini error", model, useSearch ? "(with search)" : "(no search)", r.status, detail.slice(0, 500));
+        if (useSearch && (r.status === 400 || r.status === 429)) continue; // retry same model without search
+        if (r.status === 400 || r.status === 404 || r.status === 429) continue outer; // try next model
+        break outer; // key problem or server error: stop
+      }
+    }
+
+    if (!upstream) {
+      sse(res, "error", { message: errorMessage(lastStatus) });
       return;
     }
+    if (!usedSearch) sse(res, "notice", { code: "nosearch" });
 
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
