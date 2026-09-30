@@ -29,20 +29,39 @@ For every question, search the web for current, reliable information, then write
 - Use Markdown: short headings, bullet points and bold text where they help.
 - Be thorough but clear. Mention dates and figures when relevant.
 - If sources disagree or information is uncertain, say so.
-- Do not invent facts. If you cannot find something, say so.`;
+- Do not invent facts. If you cannot find something, say so.
+- The conversation may contain earlier messages. Use them to understand follow-up questions.`;
 
 const NO_SEARCH_PROMPT = `You are a helpful assistant inside a search website. Live web search is not available right now.
 Answer from your own knowledge in a detailed, well-organized way.
 - Reply in the same language the user wrote their question in.
 - Use Markdown where it helps.
 - Briefly mention that the information may be out of date and should be checked for recent events.
-- Do not invent facts. If you are not sure, say so.`;
+- Do not invent facts. If you are not sure, say so.
+- The conversation may contain earlier messages. Use them to understand follow-up questions.`;
 
-function callGemini(model, query, useSearch, signal) {
+// Build the "contents" array for Gemini: earlier turns + the new question.
+// Consecutive messages with the same role are merged, and the list always starts with a user turn.
+function buildContents(history, query) {
+  const turns = [
+    ...history.map((h) => ({ role: h.role === "assistant" ? "model" : "user", text: h.content })),
+    { role: "user", text: query },
+  ];
+  const merged = [];
+  for (const t of turns) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === t.role) last.parts[0].text += "\n\n" + t.text;
+    else merged.push({ role: t.role, parts: [{ text: t.text }] });
+  }
+  while (merged.length > 1 && merged[0].role !== "user") merged.shift();
+  return merged;
+}
+
+function callGemini(model, contents, useSearch, signal) {
   const url = `${API_BASE}/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
   const body = {
     systemInstruction: { parts: [{ text: useSearch ? SYSTEM_PROMPT : NO_SEARCH_PROMPT }] },
-    contents: [{ role: "user", parts: [{ text: query }] }],
+    contents,
     generationConfig: { maxOutputTokens: MAX_TOKENS },
   };
   if (useSearch) body.tools = [{ google_search: {} }];
@@ -64,7 +83,7 @@ function errorMessage(status) {
 
 const app = express();
 
-// CORS: lets the static page (GitHub Pages or an Android app's index.html) call this backend.
+// CORS: lets the static page (GitHub Pages, biggo.gt.tc or an Android app's index.html) call this backend.
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -73,7 +92,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "20kb" }));
+app.use(express.json({ limit: "200kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // Optional in-memory rate limiter (off by default)
@@ -100,6 +119,13 @@ app.post("/api/search", rateLimit, async (req, res) => {
   if (!query) return res.status(400).json({ error: "Empty query." });
   if (query.length > 2000) return res.status(400).json({ error: "Query too long." });
 
+  // Earlier messages of this chat (sent by the page). Keep only the last 8, each capped in length.
+  const history = (Array.isArray(req.body?.history) ? req.body.history : [])
+    .filter((h) => h && (h.role === "user" || h.role === "assistant") && typeof h.content === "string" && h.content.trim())
+    .slice(-8)
+    .map((h) => ({ role: h.role, content: h.content.slice(0, 4000) }));
+  const contents = buildContents(history, query);
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
@@ -124,7 +150,7 @@ app.post("/api/search", rateLimit, async (req, res) => {
 
     outer: for (const model of MODELS) {
       for (const useSearch of [true, false]) {
-        const r = await callGemini(model, query, useSearch, controller.signal);
+        const r = await callGemini(model, contents, useSearch, controller.signal);
         if (r.ok && r.body) {
           upstream = r;
           usedSearch = useSearch;
