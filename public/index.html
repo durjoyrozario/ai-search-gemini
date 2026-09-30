@@ -260,9 +260,12 @@ textarea::placeholder { color:var(--muted); }
 // Google Cloud Console থেকে OAuth Web Client ID নিয়ে এখানে বসান
 const GOOGLE_CLIENT_ID = "1009861656675-j0mlifu9lipga2ciom483deumq82rsbh.apps.googleusercontent.com";
 
+// এই সাইট Render-এ না চললে (যেমন biggo.gt.tc), API কল Render সার্ভারে যাবে
+const API_BASE = location.hostname.endsWith("onrender.com") ? "" : "https://ai-search-gemini.onrender.com";
+
 const I18N = {
-  bn: { brand:"বিজ্ঞ এআই", title:"যা খুশি জিজ্ঞাসা করুন", sub:"ওয়েব থেকে খুঁজে বিস্তারিত উত্তর পান।", ph:"আপনার প্রশ্ন লিখুন…", searching:"ওয়েবে খোঁজা হচ্ছে…", writing:"উত্তর লেখা হচ্ছে…", sources:"সোর্স", error:"কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।", newChat:"নতুন চ্যাট", history:"ইতিহাস", noHist:"এখনও কোনো চ্যাট নেই।", guest:"অতিথি", guestNote:"লগইন করলে আপনার চ্যাট আপনার অ্যাকাউন্টে আলাদা থাকবে।", logout:"লগআউট", del:"মুছুন", copy:"কপি", copied:"কপি হয়েছে", stopped:"থামানো হয়েছে", foot:"চ্যাট শুধু এই ব্রাউজারে সংরক্ষিত থাকে। গুরুত্বপূর্ণ তথ্য সোর্স দেখে যাচাই করুন.", untitled:"নতুন চ্যাট", loginOff:"Google লগইন চালু করতে GOOGLE_CLIENT_ID বসান।" },
-  en: { brand:"Biggo AI", title:"Ask anything", sub:"Search the web and get a detailed answer.", ph:"Type your question…", searching:"Searching the web…", writing:"Writing the answer…", sources:"Sources", error:"Something went wrong. Please try again.", newChat:"New chat", history:"History", noHist:"No chats yet.", guest:"Guest", guestNote:"Sign in to keep your chats under your account.", logout:"Sign out", del:"Delete", copy:"Copy", copied:"Copied", stopped:"Stopped", foot:"Chats are stored in this browser only. Verify important facts with the sources.", untitled:"New chat", loginOff:"Set GOOGLE_CLIENT_ID to enable Google sign-in." },
+  bn: { brand:"বিজ্ঞ এআই", title:"যা খুশি জিজ্ঞাসা করুন", sub:"ওয়েব থেকে খুঁজে বিস্তারিত উত্তর পান।", ph:"আপনার প্রশ্ন লিখুন…", searching:"ওয়েবে খোঁজা হচ্ছে…", writing:"উত্তর লেখা হচ্ছে…", sources:"সোর্স", error:"কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।", newChat:"নতুন চ্যাট", history:"ইতিহাস", noHist:"এখনও কোনো চ্যাট নেই।", guest:"অতিথি", guestNote:"লগইন করলে আপনার চ্যাট আপনার অ্যাকাউন্টে আলাদা থাকবে।", logout:"লগআউট", del:"মুছুন", copy:"কপি", copied:"কপি হয়েছে", stopped:"থামানো হয়েছে", foot:"লগইন করলে চ্যাট আপনার অ্যাকাউন্টে সংরক্ষিত থাকে। গুরুত্বপূর্ণ তথ্য সোর্স দেখে যাচাই করুন.", untitled:"নতুন চ্যাট", loginOff:"Google লগইন চালু করতে GOOGLE_CLIENT_ID বসান।" },
+  en: { brand:"Biggo AI", title:"Ask anything", sub:"Search the web and get a detailed answer.", ph:"Type your question…", searching:"Searching the web…", writing:"Writing the answer…", sources:"Sources", error:"Something went wrong. Please try again.", newChat:"New chat", history:"History", noHist:"No chats yet.", guest:"Guest", guestNote:"Sign in to keep your chats under your account.", logout:"Sign out", del:"Delete", copy:"Copy", copied:"Copied", stopped:"Stopped", foot:"Signed-in chats are saved to your account. Verify important facts with the sources.", untitled:"New chat", loginOff:"Set GOOGLE_CLIENT_ID to enable Google sign-in." },
   hi: { brand:"Biggo AI", title:"कुछ भी पूछें", sub:"वेब पर खोजें और विस्तृत उत्तर पाएं।", ph:"अपना प्रश्न लिखें…", searching:"वेब पर खोज रहे हैं…", writing:"उत्तर लिखा जा रहा है…", sources:"स्रोत", error:"कुछ गड़बड़ हो गई। कृपया फिर से प्रयास करें।", newChat:"नई चैट", history:"इतिहास", noHist:"अभी कोई चैट नहीं।", guest:"अतिथि", guestNote:"साइन इन करने पर चैट आपके खाते में अलग रहेगी।", logout:"साइन आउट", del:"हटाएं", copy:"कॉपी", copied:"कॉपी हो गया", stopped:"रोका गया", foot:"चैट केवल इसी ब्राउज़र में सहेजी जाती हैं। ज़रूरी जानकारी स्रोतों से जांचें।", untitled:"नई चैट", loginOff:"Google साइन-इन के लिए GOOGLE_CLIENT_ID सेट करें।" },
   ur: { brand:"Biggo AI", title:"کچھ بھی پوچھیں", sub:"ویب پر تلاش کریں اور تفصیلی جواب حاصل کریں۔", ph:"اپنا سوال لکھیں…", searching:"ویب پر تلاش جاری ہے…", writing:"جواب لکھا جا رہا ہے…", sources:"ذرائع", error:"کچھ غلط ہو گیا۔ دوبارہ کوشش کریں۔", newChat:"نئی چیٹ", history:"تاریخ", noHist:"ابھی کوئی چیٹ نہیں۔", guest:"مہمان", guestNote:"سائن اِن کرنے پر چیٹ آپ کے اکاؤنٹ میں الگ رہے گی۔", logout:"سائن آؤٹ", del:"حذف", copy:"کاپی", copied:"کاپی ہو گیا", stopped:"روک دیا گیا", foot:"چیٹ صرف اسی براؤزر میں محفوظ ہوتی ہے۔ اہم معلومات ذرائع سے جانچیں۔", untitled:"نئی چیٹ", loginOff:"گوگل سائن اِن کے لیے GOOGLE_CLIENT_ID سیٹ کریں۔" },
   ar: { brand:"Biggo AI", title:"اسأل أي شيء", sub:"ابحث في الويب واحصل على إجابة مفصلة.", ph:"اكتب سؤالك…", searching:"جارٍ البحث في الويب…", writing:"جارٍ كتابة الإجابة…", sources:"المصادر", error:"حدث خطأ. حاول مرة أخرى.", newChat:"محادثة جديدة", history:"السجل", noHist:"لا توجد محادثات بعد.", guest:"زائر", guestNote:"سجّل الدخول لحفظ محادثاتك في حسابك.", logout:"تسجيل الخروج", del:"حذف", copy:"نسخ", copied:"تم النسخ", stopped:"تم الإيقاف", foot:"تُحفظ المحادثات في هذا المتصفح فقط. تحقق من المعلومات المهمة عبر المصادر.", untitled:"محادثة جديدة", loginOff:"عيّن GOOGLE_CLIENT_ID لتفعيل تسجيل الدخول بجوجل." },
@@ -294,10 +297,11 @@ const store = {
 let lang = store.get("biggo:lang", "bn");
 if (!I18N[lang]) lang = "bn";
 let user = store.get("biggo:user", null);
+let syncToken = store.get("biggo:sync", null), pushT = null;
 let chats = [], cur = null, busy = false, ctrl = null;
 const key = () => "biggo:chats:" + (user ? user.sub : "guest");
 const t = (k) => (I18N[lang] && I18N[lang][k]) || I18N.en[k] || "";
-const save = () => store.set(key(), chats.slice(0, 100));
+const save = () => { store.set(key(), chats.slice(0, 100)); push(); };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 const getChat = () => chats.find((c) => c.id === cur);
 
@@ -370,16 +374,19 @@ function initGoogle() {
   if (!GOOGLE_CLIENT_ID || !window.google) return;
   google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
-    callback: (r) => {
+    auto_select: true,
+    callback: async (r) => {
       try {
         const p = parseJwt(r.credential);
         user = { sub: p.sub, name: p.name, email: p.email, picture: p.picture };
         store.set("biggo:user", user);
         loadChats(); renderAll();
-      } catch {}
+      } catch { return; }
+      await syncLogin(r.credential);
     }
   });
   drawGoogle();
+  if (user && !syncToken) { try { google.accounts.id.prompt(); } catch {} }
 }
 function drawGoogle() {
   const el = $("gbtn");
@@ -388,7 +395,7 @@ function drawGoogle() {
 }
 function logout() {
   try { google.accounts.id.disableAutoSelect(); } catch {}
-  user = null; store.del("biggo:user");
+  user = null; store.del("biggo:user"); syncToken = null; store.del("biggo:sync");
   loadChats(); renderAll();
 }
 
@@ -479,7 +486,7 @@ async function send(text) {
   };
 
   try {
-    const res = await fetch("/api/search", {
+    const res = await fetch(API_BASE + "/api/search", {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
       body: JSON.stringify({ query, history })
     });
@@ -516,8 +523,47 @@ $("q").addEventListener("keydown", (e) => {
 $("send").addEventListener("click", () => { if (busy) ctrl && ctrl.abort(); else send($("q").value); });
 $("new").addEventListener("click", () => { if (busy) return; cur = null; renderAll(); setMenu(false); $("q").focus(); });
 
+/* ======= চ্যাট সিঙ্ক (সব ব্রাউজারে একই হিস্ট্রি) ======= */
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (syncToken) headers.Authorization = "Bearer " + syncToken;
+  const r = await fetch(API_BASE + path, { ...opts, headers });
+  if (r.status === 401) { syncToken = null; store.del("biggo:sync"); }
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function syncLogin(credential) {
+  try {
+    const d = await api("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
+    syncToken = d.token; store.set("biggo:sync", syncToken);
+    await pull();
+  } catch {}
+}
+async function pull() {
+  if (!user || !syncToken || busy) return;
+  try {
+    const d = await api("/api/chats");
+    const remote = Array.isArray(d.chats) ? d.chats : [];
+    if (remote.length || !chats.length) {
+      chats = remote; cur = null;
+      store.set(key(), chats.slice(0, 100));
+      renderAll();
+    } else push();
+  } catch {}
+}
+function push() {
+  if (!user || !syncToken) return;
+  clearTimeout(pushT);
+  pushT = setTimeout(() => {
+    let list = chats.slice(0, 40), body = JSON.stringify({ chats: list });
+    while (body.length > 900000 && list.length > 1) { list.pop(); body = JSON.stringify({ chats: list }); }
+    api("/api/chats", { method: "PUT", body }).catch(() => {});
+  }, 800);
+}
+
 loadChats();
 applyLang();
+pull();
 </script>
 </body>
 </html>
