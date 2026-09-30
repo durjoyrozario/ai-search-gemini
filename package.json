@@ -1,0 +1,18 @@
+{
+  "name": "ai-search-gemini",
+  "version": "1.0.0",
+  "description": "A search box that fetches data from the web and answers in detail, powered by Gemini.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
