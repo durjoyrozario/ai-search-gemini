@@ -65,6 +65,9 @@
   .sources a { color: var(--accent); text-decoration: none; word-break: break-word; }
   .sources a:hover { text-decoration: underline; }
   .error { color: #d92d20; }
+  .err-detail { color: var(--muted); font-size: .9rem; word-break: break-word; }
+  .notice { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .notice:empty { display: none; }
 </style>
 </head>
 <body>
@@ -104,6 +107,15 @@ const I18N = {
   fr: { title: "Posez n'importe quelle question", sub: "Recherchez sur le web et obtenez une réponse détaillée.", ph: "Saisissez votre question…", btn: "Rechercher", searching: "Recherche sur le web…", writing: "Rédaction de la réponse…", sources: "Sources", error: "Une erreur s'est produite. Veuillez réessayer." }
 };
 const RTL = new Set(["ar", "ur"]);
+const NOSEARCH = {
+  en: "Answered without live web search (search quota unavailable), so it may be out of date.",
+  bn: "লাইভ ওয়েব সার্চ ছাড়া উত্তর দেওয়া হয়েছে (সার্চের সীমা শেষ), তাই তথ্য পুরনো হতে পারে।",
+  hi: "लाइव वेब सर्च के बिना उत्तर दिया गया (सर्च सीमा उपलब्ध नहीं), इसलिए जानकारी पुरानी हो सकती है।",
+  ur: "لائیو ویب سرچ کے بغیر جواب دیا گیا (سرچ کی حد دستیاب نہیں)، اس لیے معلومات پرانی ہو سکتی ہیں۔",
+  ar: "تمت الإجابة بدون بحث مباشر في الويب (حد البحث غير متاح)، لذا قد تكون المعلومات قديمة.",
+  es: "Respuesta sin búsqueda web en vivo (cuota de búsqueda no disponible); puede estar desactualizada.",
+  fr: "Réponse sans recherche web en direct (quota de recherche indisponible) ; elle peut être obsolète."
+};
 
 const $ = (id) => document.getElementById(id);
 const langSel = $("lang"), form = $("form"), input = $("q"), btn = $("btn"), result = $("result");
@@ -149,7 +161,7 @@ form.addEventListener("submit", async (e) => {
   const t = I18N[lang];
 
   btn.disabled = true;
-  result.innerHTML = `<div class="card"><div class="status"><span class="dot"></span><span id="st">${t.searching}</span></div><div class="answer" id="ans"></div><div id="src"></div></div>`;
+  result.innerHTML = `<div class="card"><div class="status"><span class="dot"></span><span id="st">${t.searching}</span></div><div class="notice" id="notice"></div><div class="answer" id="ans"></div><div id="src"></div></div>`;
   const st = $("st"), ans = $("ans"), src = $("src");
   let text = "";
 
@@ -179,7 +191,10 @@ form.addEventListener("submit", async (e) => {
           `</ol>`;
       }
       if (event === "error") {
-        ans.innerHTML = `<p class="error">${t.error}</p>`;
+        ans.innerHTML = `<p class="error">${t.error}</p>` + (data.message ? `<p class="err-detail">${escapeHtml(data.message)}</p>` : "");
+      }
+      if (event === "notice") {
+        $("notice").textContent = NOSEARCH[lang] || NOSEARCH.en;
       }
       if (event === "done") {
         document.querySelector(".status").style.display = "none";
